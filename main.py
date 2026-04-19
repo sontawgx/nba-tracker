@@ -17,7 +17,7 @@ app_web = Flask("")
 
 @app_web.route('/')
 def home():
-    return "Bot do NBA Tracker está online e vigiando através do AllOrigins Seguro!"
+    return "Bot do NBA Tracker está online e vigiando através de Multi-Túneis!"
 
 def rodar_site_falso():
     porta = int(os.environ.get("PORT", 10000))
@@ -55,16 +55,14 @@ def validar_tweet(texto):
     
     # === LISTA NEGRA ===
     emojis_resultado = ['✅', '❌', '💰', '🔥', '👇', '⬇️', '🧹', '🏆']
-    # Removi 'likes', 'rt ', 'retweet' para não barrar apostas boas!
     palavras_proibidas = [
         'recap', 'cash', 'green', 'deposit', 'sign up', 'code', 'bonus', 
         'free picks', 'vip', 'link', 'match up to', 'sweep', 'sweeeep', 
-         'giveaway'
+        '$', 'giveaway'
     ]
     
-    # RAIO-X 1: Se bater na lista negra, ele avisa na tela do Render
     if any(palavra in texto_limpo for palavra in palavras_proibidas) or any(emoji in texto for emoji in emojis_resultado):
-        logger.info(f"🚫 [BARRADO - LISTA NEGRA]: {texto[:50].replace('\n', ' ')}...")
+        logger.info(f"🚫 [BARRADO - LIXO/PROPAGANDA]: {texto[:50].replace('\n', ' ')}...")
         return False
 
     # === LISTA BRANCA ===
@@ -74,7 +72,6 @@ def validar_tweet(texto):
     tem_esporte = bool(re.search(filtro_esportes, texto_limpo))
     tem_stat = bool(re.search(filtro_stats, texto_limpo))
     
-    # RAIO-X 2: Se não tiver aposta válida, ele também avisa
     if not (tem_esporte and tem_stat):
         logger.info(f"🚫 [BARRADO - NÃO É APOSTA]: {texto[:50].replace('\n', ' ')}...")
         
@@ -120,27 +117,39 @@ async def enviar_telegram(texto_bruto, data_tweet):
         except Exception as e:
             logger.error(f"❌ Erro ao enviar para Telegram: {e}")
 
-# --- A TUBULAÇÃO ATUALIZADA (ALLORIGINS SEGURO) ---
+# --- A TUBULAÇÃO ATUALIZADA (SISTEMA DE MULTI-TÚNEIS) ---
 async def ler_tweets_ocultos(username):
     quebrador = random.randint(100000, 999999)
     url_alvo = f"https://syndication.twitter.com/srv/timeline-profile/screen-name/{username}?_={quebrador}"
-    
     url_codificada = urllib.parse.quote(url_alvo, safe='')
-    # O endpoint /get resolve o erro 500 e preserva os emojis dentro de um JSON
-    url_proxy = f"https://api.allorigins.win/get?url={url_codificada}"
+    
+    # Rota de Fuga: Se um cair, ele tenta o outro automaticamente
+    tuneis = [
+        f"https://corsproxy.io/?{url_codificada}",
+        f"https://api.allorigins.win/get?url={url_codificada}"
+    ]
     
     headers = {"User-Agent": random.choice(USER_AGENTS)}
+    html_pagina = ""
     
     try:
         async with httpx.AsyncClient() as client:
-            resposta = await client.get(url_proxy, headers=headers, timeout=20.0)
-            
-            if resposta.status_code != 200: 
-                return []
-                
-            # Desempacota a página preservando os caracteres originais
-            dados_proxy = resposta.json()
-            html_pagina = dados_proxy.get("contents", "")
+            for tunel in tuneis:
+                try:
+                    resposta = await client.get(tunel, headers=headers, timeout=15.0)
+                    if resposta.status_code == 200:
+                        # Extrai a página dependendo do túnel que funcionou
+                        if "allorigins" in tunel:
+                            html_pagina = resposta.json().get("contents", "")
+                        else:
+                            html_pagina = resposta.text
+                        break # Se o túnel funcionou, para de tentar e segue o jogo!
+                except Exception:
+                    continue # Se deu erro, pula para o próximo túnel da lista
+                    
+        if not html_pagina:
+            logger.warning(f"⚠️ Todos os túneis falharam para @{username} neste ciclo.")
+            return []
                 
         match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>', html_pagina)
         if not match: return []
@@ -167,11 +176,11 @@ async def ler_tweets_ocultos(username):
                     
         return encontrados
     except Exception as e: 
-        logger.debug(f"Erro no túnel @{username}: {e}")
+        logger.debug(f"Erro inesperado lendo @{username}: {e}")
         return []
 
 async def loop_principal():
-    logger.info("Bot Iniciado! AllOrigins Seguro e Lista Negra Extrema ativados.")
+    logger.info("Bot Iniciado! Sistema Multi-Túneis e Raio-X ativados.")
     while True:
         for conta in CONTAS_ESPECIFICAS:
             try:
