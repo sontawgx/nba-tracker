@@ -53,24 +53,31 @@ def validar_tweet(texto):
     if not texto: return False
     texto_limpo = texto.lower()
     
-    # === LISTA NEGRA BLINDADA ===
+    # === LISTA NEGRA ===
     emojis_resultado = ['✅', '❌', '💰', '🔥', '👇', '⬇️', '🧹', '🏆']
+    # Removi 'likes', 'rt ', 'retweet' para não barrar apostas boas!
     palavras_proibidas = [
         'recap', 'cash', 'green', 'deposit', 'sign up', 'code', 'bonus', 
         'free picks', 'vip', 'link', 'match up to', 'sweep', 'sweeeep', 
-        '$', 'likes', 'retweet', 'rt ', 'giveaway'
+         'giveaway'
     ]
     
+    # RAIO-X 1: Se bater na lista negra, ele avisa na tela do Render
     if any(palavra in texto_limpo for palavra in palavras_proibidas) or any(emoji in texto for emoji in emojis_resultado):
+        logger.info(f"🚫 [BARRADO - LISTA NEGRA]: {texto[:50].replace('\n', ' ')}...")
         return False
 
-    # === LISTA BRANCA ESTRITA ===
+    # === LISTA BRANCA ===
     filtro_esportes = r'\b(nba|nfl|mlb|basketball)\b'
     filtro_stats = r'\b(over|under|pra|pts|points|reb|rebounds|ast|assists|3pm|3pa|fga|fgm|ra|pr|p\+r|pa)\b|\bo\d|\bu\d'
     
     tem_esporte = bool(re.search(filtro_esportes, texto_limpo))
     tem_stat = bool(re.search(filtro_stats, texto_limpo))
     
+    # RAIO-X 2: Se não tiver aposta válida, ele também avisa
+    if not (tem_esporte and tem_stat):
+        logger.info(f"🚫 [BARRADO - NÃO É APOSTA]: {texto[:50].replace('\n', ' ')}...")
+        
     return tem_esporte and tem_stat
 
 def extrair_apenas_aposta(texto):
