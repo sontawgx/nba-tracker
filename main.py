@@ -17,7 +17,7 @@ app_web = Flask("")
 
 @app_web.route('/')
 def home():
-    return "Bot do NBA Tracker está online e vigiando através do Túnel!"
+    return "Bot do NBA Tracker está online e vigiando através do Túnel CodeTabs!"
 
 def rodar_site_falso():
     porta = int(os.environ.get("PORT", 10000))
@@ -44,8 +44,8 @@ tweets_processados = set()
 CONTAS_ESPECIFICAS = ["WizBetz", "Gambler77Goated", "LuffyBetss", "ThePropAnt", "772_Bets", "KCLuke", "UnderdogSA1"]
 
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
 ]
 
@@ -53,18 +53,22 @@ def validar_tweet(texto):
     if not texto: return False
     texto_limpo = texto.lower()
     
-    if 'recap' in texto_limpo:
+    # === LISTA NEGRA BLINDADA ===
+    # Bloqueia Emojis de Resultados/Vendas e palavras de link de afiliado
+    emojis_resultado = ['✅', '❌', '💰', '🔥', '👇']
+    palavras_proibidas = ['recap', 'cash', 'green', 'deposit', 'sign up', 'code', 'bonus', 'free picks', 'vip', 'link', 'match up to']
+    
+    if any(palavra in texto_limpo for palavra in palavras_proibidas) or any(emoji in texto for emoji in emojis_resultado):
         return False
 
-    filtro_esportes = r'\b(nba|nfl|mlb)\b'
-    filtro_stats = r'(o\d|u\d|\bo\b|\bu\b|over|under|pra|pts|points|reb|rebounds|ast|assists|3pm|3pa|fga|fgm|ra|pr|p\+r|pa)'
+    # === LISTA BRANCA ESTRITA (\b garante que é a palavra exata) ===
+    filtro_esportes = r'\b(nba|nfl|mlb|basketball)\b'
+    # Pega stats exatas OU letras O/U coladas em números (ex: o22.5)
+    filtro_stats = r'\b(over|under|pra|pts|points|reb|rebounds|ast|assists|3pm|3pa|fga|fgm|ra|pr|p\+r|pa)\b|\bo\d|\bu\d'
     
     tem_esporte = bool(re.search(filtro_esportes, texto_limpo))
     tem_stat = bool(re.search(filtro_stats, texto_limpo))
     
-    if not (tem_esporte and tem_stat):
-        logger.info(f"🚫 Tweet descartado (Filtro): {texto[:40].replace('\n', ' ')}...")
-        
     return tem_esporte and tem_stat
 
 def extrair_apenas_aposta(texto):
@@ -72,10 +76,11 @@ def extrair_apenas_aposta(texto):
     if len(linhas) <= 2: return texto.strip()
         
     aposta_isolada = []
-    filtro_stats = r'(o|u|over|under|pra|pts|points|reb|rebounds|ast|assists|3pm|3pa|fga|fgm|ra|pr|p\+r|pa)'
+    filtro_stats = r'\b(over|under|pra|pts|points|reb|rebounds|ast|assists|3pm|3pa|fga|fgm|ra|pr|p\+r|pa)\b|\bo\d|\bu\d'
     
     for linha in linhas:
-        if re.search(filtro_stats, linha.lower()) and re.search(r'\d', linha):
+        # Pega a linha só se tiver a estatística, um número e não for um link HTTP
+        if re.search(filtro_stats, linha.lower()) and re.search(r'\d', linha) and "http" not in linha.lower():
             aposta_isolada.append(linha.strip())
             
     return "\n".join(aposta_isolada) if aposta_isolada else texto.strip()
@@ -107,24 +112,24 @@ async def enviar_telegram(texto_bruto, data_tweet):
         except Exception as e:
             logger.error(f"❌ Erro ao enviar para Telegram: {e}")
 
-# --- A TUBULAÇÃO ATUALIZADA (COM O PROXY) ---
+# --- A TUBULAÇÃO ATUALIZADA (NOVO TÚNEL CODETABS) ---
 async def ler_tweets_ocultos(username):
     quebrador = random.randint(10000, 99999)
     url_alvo = f"https://syndication.twitter.com/srv/timeline-profile/screen-name/{username}?_={quebrador}"
     
-    # Codificamos a URL original e passamos ela pelo túnel do AllOrigins
     url_codificada = urllib.parse.quote(url_alvo, safe='')
-    url_proxy = f"https://api.allorigins.win/raw?url={url_codificada}"
+    # Novo Proxy mais estável
+    url_proxy = f"https://api.codetabs.com/v1/proxy?quest={url_codificada}"
     
     headers = {"User-Agent": random.choice(USER_AGENTS)}
     
     try:
         async with httpx.AsyncClient() as client:
-            # Tempo de timeout aumentado para 20s para dar tempo do proxy responder
             resposta = await client.get(url_proxy, headers=headers, timeout=20.0)
             
-            if resposta.status_code == 429: 
-                logger.warning(f"⚠️ Proxy também tomou bloqueio (429) lendo @{username}")
+            # Se der erro 500 ou 429, apenas avisa e segue a vida sem travar
+            if resposta.status_code != 200: 
+                logger.warning(f"⚠️ Proxy falhou (Status {resposta.status_code}) ao ler @{username}. Tentaremos no próximo ciclo.")
                 return []
                 
         match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>', resposta.text)
@@ -156,7 +161,7 @@ async def ler_tweets_ocultos(username):
         return []
 
 async def loop_principal():
-    logger.info("Bot Iniciado! Túnel Proxy ativado para furar o bloqueio da nuvem.")
+    logger.info("Bot Iniciado! Túnel CodeTabs e Lista Negra Restrita ativados.")
     while True:
         for conta in CONTAS_ESPECIFICAS:
             try:
