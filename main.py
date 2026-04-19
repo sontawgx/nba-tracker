@@ -5,6 +5,7 @@ import re
 import json
 import httpx
 import random
+import urllib.parse
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
@@ -16,10 +17,9 @@ app_web = Flask("")
 
 @app_web.route('/')
 def home():
-    return "Bot do NBA Tracker está online e vigiando!"
+    return "Bot do NBA Tracker está online e vigiando através do Túnel!"
 
 def rodar_site_falso():
-    # O Render exige que o site rode na porta que ele define ou na 10000
     porta = int(os.environ.get("PORT", 10000))
     app_web.run(host='0.0.0.0', port=porta)
 
@@ -28,7 +28,6 @@ def manter_vivo():
     t.start()
 # ---------------------------------------------
 
-# 1. CONFIGURAÇÕES INICIAIS
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s', datefmt='%H:%M:%S')
 logger = logging.getLogger("NBA_Tracker")
 
@@ -50,7 +49,6 @@ USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
 ]
 
-# 2. A "PENEIRA" (Validação e Extração)
 def validar_tweet(texto):
     if not texto: return False
     texto_limpo = texto.lower()
@@ -58,16 +56,14 @@ def validar_tweet(texto):
     if 'recap' in texto_limpo:
         return False
 
-    # Filtro atualizado para garantir a palavra 'points', 'rebounds', etc.
     filtro_esportes = r'\b(nba|nfl|mlb)\b'
     filtro_stats = r'(o\d|u\d|\bo\b|\bu\b|over|under|pra|pts|points|reb|rebounds|ast|assists|3pm|3pa|fga|fgm|ra|pr|p\+r|pa)'
     
     tem_esporte = bool(re.search(filtro_esportes, texto_limpo))
     tem_stat = bool(re.search(filtro_stats, texto_limpo))
     
-    # Se ele achar o tweet e rejeitar, ele vai te avisar lá na tela do Render
     if not (tem_esporte and tem_stat):
-        logger.info(f"🚫 Tweet descartado (Não bateu o filtro): {texto[:40].replace('\n', ' ')}...")
+        logger.info(f"🚫 Tweet descartado (Filtro): {texto[:40].replace('\n', ' ')}...")
         
     return tem_esporte and tem_stat
 
@@ -84,7 +80,6 @@ def extrair_apenas_aposta(texto):
             
     return "\n".join(aposta_isolada) if aposta_isolada else texto.strip()
 
-# 3. MENSAGEM DO TELEGRAM
 async def enviar_telegram(texto_bruto, data_tweet):
     data_brasil = data_tweet - timedelta(hours=3)
     data_formatada = data_brasil.strftime("%d/%m/%Y")
@@ -112,20 +107,24 @@ async def enviar_telegram(texto_bruto, data_tweet):
         except Exception as e:
             logger.error(f"❌ Erro ao enviar para Telegram: {e}")
 
-# 4. A TUBULAÇÃO DE LEITURA (Com Quebrador de Cache e Alertas)
+# --- A TUBULAÇÃO ATUALIZADA (COM O PROXY) ---
 async def ler_tweets_ocultos(username):
-    # Quebrador de Cache: Engana o Twitter para mandar a página atualizada
     quebrador = random.randint(10000, 99999)
-    url = f"https://syndication.twitter.com/srv/timeline-profile/screen-name/{username}?_={quebrador}"
+    url_alvo = f"https://syndication.twitter.com/srv/timeline-profile/screen-name/{username}?_={quebrador}"
+    
+    # Codificamos a URL original e passamos ela pelo túnel do AllOrigins
+    url_codificada = urllib.parse.quote(url_alvo, safe='')
+    url_proxy = f"https://api.allorigins.win/raw?url={url_codificada}"
+    
     headers = {"User-Agent": random.choice(USER_AGENTS)}
     
     try:
         async with httpx.AsyncClient() as client:
-            resposta = await client.get(url, headers=headers)
+            # Tempo de timeout aumentado para 20s para dar tempo do proxy responder
+            resposta = await client.get(url_proxy, headers=headers, timeout=20.0)
             
-            # Se a Render tomar bloqueio, agora você vai saber!
             if resposta.status_code == 429: 
-                logger.warning(f"⚠️ Render tomou bloqueio (429) lendo @{username}")
+                logger.warning(f"⚠️ Proxy também tomou bloqueio (429) lendo @{username}")
                 return []
                 
         match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>', resposta.text)
@@ -152,11 +151,12 @@ async def ler_tweets_ocultos(username):
                     encontrados.append({"id": id_str, "text": texto, "data": data_tweet})
                     
         return encontrados
-    except Exception as e: return []
+    except Exception as e: 
+        logger.debug(f"Erro menor no túnel @{username}: {e}")
+        return []
 
-# 5. MOTOR PRINCIPAL
 async def loop_principal():
-    logger.info("Bot Iniciado! Filtro de Horas, Extração e Disfarce Web ativados.")
+    logger.info("Bot Iniciado! Túnel Proxy ativado para furar o bloqueio da nuvem.")
     while True:
         for conta in CONTAS_ESPECIFICAS:
             try:
@@ -172,6 +172,6 @@ async def loop_principal():
         await asyncio.sleep(180)
 
 if __name__ == "__main__":
-    manter_vivo() # Liga o site de mentira
-    try: asyncio.run(loop_principal()) # Liga o robô
+    manter_vivo()
+    try: asyncio.run(loop_principal())
     except KeyboardInterrupt: pass
